@@ -1,26 +1,43 @@
 package main
 
 import (
-	"fmt"
-	"net/http"
+	"log"
+	"time"
+
+	"github.com/hashicorp/consul/api"
 )
 
-type criticalServices []struct {
-	Node        string `json:"Node"`
-	CheckID     string `json:"CheckID"`
-	Name        string `json:"Name"`
-	Status      string `json:"Status"`
-	Notes       string `json:"Notes"`
-	Output      string `json:"Output"`
-	ServiceID   string `json:"ServiceID"`
-	ServiceName string `json:"ServiceName"`
+func Reap(datacenter string) {
+	client, err := api.NewClient(api.DefaultConfig())
+	if err != nil {
+		log.Println("Cound not create Consul client")
+		return
+	}
+
+	criticalServices, _, err := client.Health().State("critical", &api.QueryOptions{
+		Datacenter:        datacenter,
+		AllowStale:        true,
+		RequireConsistent: false,
+		WaitTime:          5 * time.Second,
+	})
+
+	if err != nil {
+		log.Println("Cound not get service health")
+		panic(err)
+		return
+	}
+	for _, critical := range criticalServices {
+		_, err := client.Catalog().Deregister(&api.CatalogDeregistration{
+			Datacenter: datacenter,
+			Node:       critical.Node,
+			ServiceID:  critical.ServiceID,
+		}, &api.WriteOptions{})
+		if err != nil {
+			log.Println("Cound not deregister " + critical.ServiceID)
+		}
+	}
 }
 
 func main() {
-	resp, err := http.Get("http://example.com/")
-	if err != nil {
-
-	}
-
-	fmt.Print("hello")
+	Reap("")
 }
