@@ -16,6 +16,7 @@ func Reap(address string, datacenter string) {
 	})
 	if err != nil {
 		log.Println("Cound not create Consul client")
+		log.Println(err.Error())
 		return
 	}
 	for ; ; {
@@ -29,6 +30,7 @@ func Reap(address string, datacenter string) {
 
 		if err != nil {
 			log.Println("Cound not get service health")
+			log.Println(err.Error())
 			return
 		}
 
@@ -41,7 +43,16 @@ func Reap(address string, datacenter string) {
 				ServiceID:  critical.ServiceID,
 			}, &api.WriteOptions{})
 			if err != nil {
-				log.Println("Cound not deregister " + critical.ServiceID)
+				log.Println("Cound not deregister service " + critical.ServiceID)
+			}
+			_, err := client.Catalog().Deregister(&api.CatalogDeregistration{
+				Datacenter: datacenter,
+				Node:       critical.Node,
+				ServiceID:  critical.ServiceID,
+				CheckID: critical.CheckID,
+			}, &api.WriteOptions{})
+			if err != nil {
+				log.Println("Cound not deregister checl" + critical.CheckID)
 			}
 		}
 
@@ -50,10 +61,13 @@ func Reap(address string, datacenter string) {
 }
 
 func main() {
-	address := os.Getenv("ConsulAddress")
-	if address == "" {
-		address = "127.0.0.1:8500"
+	host := os.Getenv("ConsulHost")
+	if host == "" {
+		host = "127.0.0.1"
 	}
-	go Reap("", "")
+	address := host + ":8500"
+	time.Sleep(5 * time.Second)
+	log.Println("Connecting to Consul on " + address)
+	go Reap(address, "")
 	console.ReadLine()
 }
