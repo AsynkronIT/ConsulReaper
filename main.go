@@ -6,10 +6,14 @@ import (
 
 	"github.com/hashicorp/consul/api"
 	"github.com/rogeralsing/goconsole"
+	"os"
 )
 
-func Reap(datacenter string) {
-	client, err := api.NewClient(api.DefaultConfig())
+func Reap(address string, datacenter string) {
+
+	client, err := api.NewClient(&api.Config{
+		Address: address,
+	})
 	if err != nil {
 		log.Println("Cound not create Consul client")
 		return
@@ -18,7 +22,7 @@ func Reap(datacenter string) {
 		log.Println("Getting critical services")
 		criticalServices, _, err := client.Health().State("critical", &api.QueryOptions{
 			Datacenter:        datacenter,
-			AllowStale:        true,
+			AllowStale:        false,
 			RequireConsistent: false,
 			WaitTime:          5 * time.Second,
 		})
@@ -46,6 +50,10 @@ func Reap(datacenter string) {
 }
 
 func main() {
-	go Reap("")
+	address := os.Getenv("ConsulAddress")
+	if address == "" {
+		address = "127.0.0.1:8500"
+	}
+	go Reap("", "")
 	console.ReadLine()
 }
