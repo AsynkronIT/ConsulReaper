@@ -4,9 +4,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/hashicorp/consul/api"
-	"github.com/rogeralsing/goconsole"
 	"os"
+
+	"github.com/hashicorp/consul/api"
+	"fmt"
 )
 
 func Reap(address string, datacenter string) {
@@ -19,7 +20,7 @@ func Reap(address string, datacenter string) {
 		log.Println(err.Error())
 		return
 	}
-	for ; ; {
+	for {
 		log.Println("Getting critical services")
 		criticalServices, _, err := client.Health().State("critical", &api.QueryOptions{
 			Datacenter:        datacenter,
@@ -37,22 +38,10 @@ func Reap(address string, datacenter string) {
 		log.Println("Got critical services")
 		for _, critical := range criticalServices {
 			log.Println("Deregistering " + critical.ServiceID)
-			_, err := client.Catalog().Deregister(&api.CatalogDeregistration{
-				Datacenter: datacenter,
-				Node:       critical.Node,
-				ServiceID:  critical.ServiceID,
-			}, &api.WriteOptions{})
+
+			err = client.Agent().ServiceDeregister(critical.ServiceID)
 			if err != nil {
-				log.Println("Cound not deregister service " + critical.ServiceID)
-			}
-			_, err := client.Catalog().Deregister(&api.CatalogDeregistration{
-				Datacenter: datacenter,
-				Node:       critical.Node,
-				ServiceID:  critical.ServiceID,
-				CheckID: critical.CheckID,
-			}, &api.WriteOptions{})
-			if err != nil {
-				log.Println("Cound not deregister checl" + critical.CheckID)
+				log.Println("Cound not deregister service on agent" + critical.ServiceID)
 			}
 		}
 
@@ -61,13 +50,14 @@ func Reap(address string, datacenter string) {
 }
 
 func main() {
+	log.Println("Starting...")
 	host := os.Getenv("ConsulHost")
 	if host == "" {
 		host = "127.0.0.1"
 	}
-	address := host + ":8500"
+	port := "8500"
+	address := fmt.Sprintf("%v:%v",host,port)
 	time.Sleep(5 * time.Second)
 	log.Println("Connecting to Consul on " + address)
-	go Reap(address, "")
-	console.ReadLine()
+	Reap(address, "")
 }
