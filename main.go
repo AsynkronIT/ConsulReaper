@@ -1,56 +1,48 @@
 package main
 
 import (
+	"io/ioutil"
 	"log"
+	"net/http"
 	"time"
 
-	"os"
+	"fmt"
 
 	"github.com/hashicorp/consul/api"
-	"fmt"
 )
 
-func do(body func() error) {
-	for {
-		err := body()
-		if err != nil {
-			log.Println(err.Error())
-			time.Sleep(10 * time.Second)
-			continue
-		}
-		return
-	}
-}
-
 func Reap(address string, datacenter string) {
-	var client *api.Client
-	do(func() error {
-		c, err := api.NewClient(&api.Config{Address: address})
-		client = c
-		return err
-	})
+	client, err := api.NewClient(&api.Config{Address: address})
+	if err != nil {
+		log.Fatalf("Failed: Creating client %v", err)
+	}
+	node, err := client.Agent().NodeName()
+	if err != nil {
+		log.Fatalf("Getting Node name %v", err)
+	}
 
 	for {
-		log.Println("Getting critical services")
 		var criticalServices []*api.HealthCheck
-		do(func() error {
-			c, _, err := client.Health().State("critical", &api.QueryOptions{
-				Datacenter:        datacenter,
-				AllowStale:        false,
-				RequireConsistent: false,
-				WaitTime:          5 * time.Second,
-			})
-			criticalServices = c
-			return err
+		criticalServices, _, err := client.Health().State("critical", &api.QueryOptions{
+			Datacenter:        datacenter,
+			AllowStale:        false,
+			RequireConsistent: false,
+			WaitTime:          5 * time.Second,
 		})
+		if err != nil {
+			log.Fatalf("Failed: Getting critical services %v", err)
+		}
 
-		log.Println("Got critical services")
 		for _, critical := range criticalServices {
-			log.Println("Deregistering " + critical.ServiceID)
+			if critical.Node == node {
+				log.Println("Deregistering " + critical.ServiceID)
 
-			err := client.Agent().ServiceDeregister(critical.ServiceID)
-			if err != nil {
-				log.Println("Cound not deregister service on agent" + critical.ServiceID)
+				err := client.Agent().ServiceDeregister(critical.ServiceID)
+				if err != nil {
+					log.Println("Cound not deregister service on agent" + critical.ServiceID)
+				}
+			} else {
+				log.Printf("%v %v", node, critical.Node)
 			}
 		}
 
@@ -60,12 +52,22 @@ func Reap(address string, datacenter string) {
 
 func main() {
 	log.Println("Starting...")
-	host := os.Getenv("ConsulHost")
-	if host == "" {
-		host = "127.0.0.1"
-	}
+	time.Sleep(20 * time.Second)
+	host, _ := httpGet("http://rancher-metadata.rancher.internal/2015-12-19/self/host/agent_ip")
+	log.Printf("Got Rancher Host IP %v", host)
 	port := "8500"
 	address := fmt.Sprintf("%v:%v", host, port)
 	log.Println("Connecting to Consul on " + address)
 	Reap(address, "")
+}
+
+func httpGet(url string) (string, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Fatalf("Failed: Get %v %v", url, err)
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	str := string(body)
+	return str, err
 }
